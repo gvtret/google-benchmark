@@ -78,7 +78,20 @@ jobs:
         uses: mlugg/setup-zig@v1
         with:
           version: 0.14.0
-      - name: Build libbenchmark + adapter via CMake
+      # Linux: `zig build test` covers this directly (cmake build + native
+      # Zig tests + the C++ adapter smoke test) and is verified reliable.
+      - name: Run zig build test (Linux)
+        if: runner.os == 'Linux'
+        run: zig build test
+        working-directory: bindings/zig
+      # macOS: kept as separate manual steps rather than `zig build test`.
+      # build.zig's test/run steps link static libstdc++/libgcc archives
+      # located via `g++ -print-file-name=...`, which is GNU-specific —
+      # Apple's toolchain (Clang/libc++, no libstdc++.a) is not verified to
+      # provide them, so this leg is left untouched to avoid breaking CI on
+      # an assumption. See docs/architecture.md#build-system-flow.
+      - name: Build libbenchmark + adapter via CMake (macOS)
+        if: runner.os == 'macOS'
         run: |
           cmake -S bindings/zig -B bindings/zig/cmake-build \
             -DBENCHMARK_ENABLE_TESTING=OFF \
@@ -86,10 +99,12 @@ jobs:
             -DBENCHMARK_ENABLE_WERROR=OFF \
             -DCMAKE_BUILD_TYPE=Release
         working-directory: .
-      - name: Build combined archive
+      - name: Build combined archive (macOS)
+        if: runner.os == 'macOS'
         run: cmake --build bindings/zig/cmake-build --config Release --parallel
         working-directory: .
-      - name: Run adapter C++ tests
+      - name: Run adapter C++ tests (macOS)
+        if: runner.os == 'macOS'
         run: |
           cd bindings/zig
           g++ -std=c++17 -I src -I ../../include \
@@ -98,7 +113,8 @@ jobs:
             -lstdc++ -lpthread -lm \
             -o test_adapter
           ./test_adapter
-      - name: Verify Zig module compiles
+      - name: Verify Zig module compiles (macOS)
+        if: runner.os == 'macOS'
         run: |
           cd bindings/zig
           zig build-lib src/benchmark.zig -I src -I ../../include -OReleaseFast

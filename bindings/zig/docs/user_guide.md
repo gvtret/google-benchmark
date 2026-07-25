@@ -36,6 +36,9 @@ zig build -Dbenchmark_path=/usr/local/lib
 
 ## First Benchmark
 
+Add your benchmark function to `bindings/zig/examples/basic.zig`, using the
+`benchmark` module — pure Zig, no C or C++ code to write:
+
 ```zig
 const std = @import("std");
 const benchmark = @import("benchmark");
@@ -56,13 +59,23 @@ pub fn main() void {
 }
 ```
 
-Run it:
+Build and run it:
+
 ```bash
-zig run my_benchmark.zig
+cd bindings/zig
+zig build run
 ```
 
+`zig build run` builds `libbenchmark` via CMake, compiles `examples/basic.zig` against
+it, and runs the resulting binary — a plain `zig run my_benchmark.zig` does
+not work standalone, since the `benchmark` module and its C++ library must
+be linked in through `build.zig` (see
+[developer_guide.md](developer_guide.md#writing-and-running-benchmarks) and
+[architecture.md](architecture.md#build-system-flow)).
+
 Output:
-```
+
+```text
 Running BM_hello
 Run on (8 X 3600 MHz CPU s)
 Load Average: 0.50, 0.30, 0.10
@@ -183,7 +196,13 @@ fn BM_conditional(state: *benchmark.State) void {
 
 ## Command-Line Flags
 
-Pass flags through `initialize`:
+When running via `zig build run`, pass flags after `--`:
+
+```bash
+zig build run -- --benchmark_filter=BM_hello --benchmark_min_time=0.5
+```
+
+Internally, these arrive as `args` and are passed through `initialize`:
 
 ```zig
 const args = [_][*:0]const u8{
@@ -198,7 +217,7 @@ const args = [_][*:0]const u8{
 Common flags:
 
 | Flag | Description |
-|---|---|
+| --- | --- |
 | `--benchmark_format=console` | Output format (console, json, csv) |
 | `--benchmark_min_time=0.5` | Minimum time per benchmark (seconds) |
 | `--benchmark_repetitions=3` | Number of repetitions |
@@ -208,7 +227,7 @@ Common flags:
 
 ## Interpreting Output
 
-```
+```text
 BM_sort/8           123 ns          121 ns      5678901
 │     │              │                │            │
 │     │              │                │            └─ iterations run

@@ -2,7 +2,7 @@
 
 ## Project Structure
 
-```
+```text
 bindings/zig/
 ├── build.zig              # Zig build system
 ├── build.zig.zon          # Package metadata
@@ -12,7 +12,7 @@ bindings/zig/
 │   ├── benchmark.zig      # Public Zig API
 │   └── benchmark_test.zig # Unit tests
 ├── examples/
-│   └── basic.zig          # Usage examples
+│   └── basic.zig          # Runnable examples (see `zig build run`)
 ├── docs/
 │   ├── architecture.md    # Architecture overview
 │   ├── developer_guide.md # This file
@@ -64,9 +64,64 @@ cd bindings/zig
 zig build test
 ```
 
-To run with verbose output:
+This runs two independent checks:
+
+1. The native Zig `test` blocks in `src/benchmark_test.zig`, exercising the
+   public `benchmark` module directly (`registerBenchmark`, `run`, `State`
+   methods, etc.).
+2. `test_adapter.cc`, a lower-level C++ smoke test of the `zig_api.h/cc`
+   adapter surface, independent of the Zig module.
+
+Both link against the combined archive the same way `zig build run` does
+(see [architecture.md](architecture.md#build-system-flow)) — a workaround
+for Zig's `lld` not resolving system C++ libraries the way `g++`/`clang++`
+do.
+
+The native test binary is built with a non-default test runner mode
+(`.mode = .simple` instead of the build system's default `.server`), because
+`benchmark.run()` writes raw benchmark output straight to stdout via the
+linked C++ library, which corrupts the build system's structured test IPC
+protocol (`--listen=-`) and deadlocks `zig build test` forever if left in
+the default mode. See the comment above `native_tests` in `build.zig` for
+details. One consequence: `zig build test` doesn't report a Zig-native
+per-test pass/fail summary the way a plain `zig test` invocation would —
+the test binary's own "N/M test.name...OK" output is printed directly
+instead, and the step fails on nonzero exit or a crash.
+
+## Writing and Running Benchmarks
+
+Add benchmark functions to `examples/basic.zig` using the `benchmark` module
+(`src/benchmark.zig`) — no C or C++ code required:
+
+```zig
+const benchmark = @import("benchmark");
+
+fn bm_my_benchmark(state: *benchmark.State) void {
+    while (state.keepRunning()) {
+        // work to measure
+    }
+}
+
+// in main():
+_ = benchmark.registerBenchmark("BM_my_benchmark", bm_my_benchmark);
+```
+
+Then build and run:
+
 ```bash
-zig build test -- --verbose
+zig build run
+```
+
+This links `examples/basic.zig` against the combined `libbenchmark_combined.a`
+produced by the `cmake` step, plus the system's static C++ runtime
+(`libstdc++.a`, `libsupc++.a`, `libgcc.a`, `libgcc_eh.a` on Linux) — see
+[architecture.md](architecture.md#build-system-flow) for why these are
+needed and passed explicitly.
+
+To pass benchmark CLI flags through `zig build run`:
+
+```bash
+zig build run -- --benchmark_filter=BM_sort --benchmark_min_time=1
 ```
 
 ## Building Standalone vs Via CMake
@@ -89,10 +144,28 @@ cd build && ctest -R zig_bindings_tests
 
 ## CI Integration
 
-The GitHub Actions workflow in `.github/workflows/test_bindings.yml` runs:
+The GitHub Actions workflow in `.github/workflows/test_bindings.yml`
+(`zig_bindings` job, `ubuntu-latest` + `macos-latest`) runs different steps
+per OS:
 
-1. `zig build test` — native Zig test execution
-2. CMake + ctest — integration with the project's test infrastructure
+- **`ubuntu-latest`**: a single `zig build test` step — this exercises the
+  CMake build, the native Zig `test` blocks in `src/benchmark_test.zig`,
+  and the `test_adapter.cc` C++ smoke test, all in one command (see
+  "Running Tests" above).
+- **`macos-latest`**: its own manual steps (`cmake` configure + build,
+  compile/run `test_adapter.cc` with `g++`, `zig build-lib
+  src/benchmark.zig` to verify the module compiles) — kept separate from
+  `zig build test` deliberately. `build.zig`'s `test`/`run` steps locate
+  static `libstdc++.a`/`libsupc++.a`/`libgcc.a`/`libgcc_eh.a` archives via
+  `g++ -print-file-name=...` (see
+  [architecture.md](architecture.md#build-system-flow)) — this is
+  GNU-specific, and Apple's toolchain (Clang/libc++, no `libstdc++.a`) is
+  not verified to provide equivalents. Unifying the two legs onto
+  `zig build test` was considered but not done, since it can't be verified
+  without an actual macOS runner and risks silently breaking that leg. Note
+  the macOS `test_adapter.cc` step's own `-lstdc++` may have the same
+  underlying risk (modern macOS SDKs dropped `libstdc++`) — also unverified,
+  left as-is rather than guessed at.
 
 ## Code Style
 

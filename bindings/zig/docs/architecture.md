@@ -2,30 +2,30 @@
 
 ## Layer Diagram
 
-```
-┌─────────────────────────────────────────────────┐
+```text
+┌──────────────────────────────────────────────────┐
 │                  Zig Application                 │
-│  benchmark.registerBenchmark("BM_Foo", foo)     │
-│  benchmark.run()                                │
-└───────────────────┬─────────────────────────────┘
+│  benchmark.registerBenchmark("BM_Foo", foo)      │
+│  benchmark.run()                                 │
+└───────────────────┬──────────────────────────────┘
                     │ @cImport / extern functions
-┌───────────────────▼─────────────────────────────┐
+┌───────────────────▼──────────────────────────────┐
 │              benchmark.zig (Zig API)             │
 │  State, Benchmark, TimeUnit — idiomatic wrappers │
 │  comptime trampoline for callbacks               │
-└───────────────────┬─────────────────────────────┘
+└───────────────────┬──────────────────────────────┘
                     │ C function calls
-┌───────────────────▼─────────────────────────────┐
-│           zig_api.h / zig_api.cc (C adapter)    │
+┌───────────────────▼──────────────────────────────┐
+│           zig_api.h / zig_api.cc (C adapter)     │
 │  extern "C" functions wrapping C++ methods       │
 │  void* opaque pointers for State & Benchmark     │
-└───────────────────┬─────────────────────────────┘
+└───────────────────┬──────────────────────────────┘
                     │ #include "benchmark/benchmark.h"
-┌───────────────────▼─────────────────────────────┐
+┌───────────────────▼──────────────────────────────┐
 │           libbenchmark.so / .a (C++)             │
 │  benchmark::Initialize, RunSpecifiedBenchmarks,  │
 │  RegisterBenchmark, State, Benchmark classes     │
-└─────────────────────────────────────────────────┘
+└──────────────────────────────────────────────────┘
 ```
 
 ## Why Three Layers?
@@ -42,7 +42,7 @@ This is the same pattern used by the Rust bindings (which use `cxx` for similar 
 
 When a benchmark function is registered, the flow is:
 
-```
+```text
 Zig: registerBenchmark("BM_foo", my_fn)
   → Zig generates a comptime trampoline: S.trampoline
   → calls c.benchmark_zig_register_benchmark("BM_foo", &S.trampoline)
@@ -81,16 +81,42 @@ For user-provided strings (e.g., `registerBenchmark`, `addCustomContext`), the c
 
 ## Build System Flow
 
-```
-zig build
-  → cmake -S ../../ -B cmake-build (builds libbenchmark)
-  → compiles zig_api.cc as C++
-  → links libbenchmark.a + zig_api.o → libzig_api.a
-  → compiles benchmark.zig + benchmark_test.zig
-  → produces test binary
+```text
+zig build cmake  (dependency of test/run, rarely invoked directly)
+  → cmake -S . -B cmake-build (builds libbenchmark + zig_api.cc as C++)
+  → produces cmake-build/libbenchmark_combined.a (libbenchmark.a + zig_api.o combined)
+
+zig build test
+  → depends on: cmake
+  → zig c++ test_adapter.cc -lbenchmark_combined <system libstdc++.a/libsupc++.a/libgcc.a> -o test_adapter
+  → runs ./test_adapter (C++ smoke test of the zig_api.h/cc adapter surface)
+
+zig build run
+  → depends on: cmake
+  → zig build-exe examples/basic.zig (imports the `benchmark` Zig module)
+      + cmake-build/libbenchmark_combined.a
+      + system libstdc++.a / libsupc++.a / libgcc.a / libgcc_eh.a (as object files)
+  → runs the resulting run_benchmarks binary
 ```
 
-Alternatively, `-Dbenchmark_path=/path` skips the CMake step and links against a pre-installed library.
+Alternatively, `-Dbenchmark_path=/path/to/dir` (a directory containing
+`libbenchmark_combined.a`) skips the CMake step and links against a
+pre-built library.
+
+Note: `zig build-exe`/`zig c++` use Zig's bundled `lld`, which cannot resolve
+system C++ libraries automatically the way `g++`/`clang++` do. Both the
+`test` and `run` steps work around this by passing `libstdc++.a`,
+`libsupc++.a`, `libgcc.a`, and (for `run`) `libgcc_eh.a` explicitly —
+`libgcc_eh.a` supplies the `_Unwind_*` symbols used by C++ exception
+tables that `libgcc.a` alone does not provide.
+
+The directory containing these archives is not hardcoded to a specific GCC
+version — `build.zig`'s `gccLibDir()` runs `g++ -print-file-name=libstdc++.a`
+and takes its `dirname()`, so whatever GCC major version is installed works.
+This lookup only runs `g++`; if it's missing, `zig build` alone still
+succeeds (with a warning) since the plain build doesn't need it — only
+`test`/`run` do. See [README.md](../README.md#prerequisites) for what to
+install and how.
 
 ## Thread Safety
 

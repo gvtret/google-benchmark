@@ -4,9 +4,56 @@ Zig bindings for the [Google Benchmark](https://github.com/google/benchmark) mic
 
 ## Prerequisites
 
-- Zig 0.11.0 or later
-- CMake 3.13+
-- C++17 compatible compiler (GCC, Clang, or MSVC)
+- **Zig 0.14.x** — this binding uses 0.14-specific APIs (e.g.
+  `std.process.argsAlloc`'s `[]const [:0]const u8` return type,
+  `std.mem.doNotOptimizeAway`) and 0.14 syntax rules (no `///` doc comments
+  directly above `test` blocks). Other versions are untested and may not
+  build. Download from <https://ziglang.org/download/> (no package manager
+  install needed — it's a single self-contained archive to unpack onto
+  `PATH`).
+- **CMake 3.13+** — builds `libbenchmark` itself.
+- **A C++17 compiler** — used by CMake to build `libbenchmark`. GCC, Clang,
+  or MSVC all work for the plain `zig build` step.
+- **GCC's `g++`, specifically, for `zig build test` and `zig build run`** —
+  these two steps link against the static `libstdc++.a`/`libsupc++.a`/
+  `libgcc.a`/`libgcc_eh.a` archives, because Zig's bundled `lld` cannot
+  resolve system C++ libraries the way `g++`/`clang++` do (see
+  [docs/architecture.md](docs/architecture.md#build-system-flow)).
+  `build.zig` locates these by running `g++ -print-file-name=libstdc++.a`,
+  so any installed GCC version works — no specific version is hardcoded.
+  Plain `zig build` does not need `g++` and works without it (e.g. on
+  macOS with only Clang); only `test` and `run` require it.
+
+### Installing g++ with static libstdc++/libgcc archives
+
+On Debian/Ubuntu, installing `g++` already pulls these in as a transitive
+dependency (verified: `g++` → `g++-<N>-<arch>` → `libstdc++-<N>-dev` /
+`libgcc-<N>-dev`, which ship the `.a` archives, not just the `.so`):
+
+```bash
+sudo apt install g++ cmake
+```
+
+On Fedora/RHEL (`dnf`), the static archives ship in a separate package from
+the compiler:
+
+```bash
+sudo dnf install gcc-c++ libstdc++-static cmake
+```
+
+On Arch Linux (`pacman`), `gcc` ships the static archives directly:
+
+```bash
+sudo pacman -S gcc cmake
+```
+
+To check your system already has everything `zig build test`/`zig build run`
+need:
+
+```bash
+g++ -print-file-name=libstdc++.a   # must NOT print just "libstdc++.a" back —
+                                    # that means it wasn't found
+```
 
 ## Quick Start
 
@@ -60,12 +107,24 @@ cd bindings/zig
 zig build test
 ```
 
-## Running Examples
+## Writing and Running Benchmarks
+
+Add benchmark functions to `examples/basic.zig` using the `benchmark` module shown
+above — no C or C++ code needed — then:
 
 ```bash
 cd bindings/zig
-zig run examples/basic.zig
+zig build run
 ```
+
+Pass benchmark CLI flags after `--`:
+
+```bash
+zig build run -- --benchmark_filter=BM_hello --benchmark_min_time=0.5
+```
+
+See [docs/developer_guide.md](docs/developer_guide.md#writing-and-running-benchmarks)
+for details on how `zig build run` links against the library.
 
 ## API
 
