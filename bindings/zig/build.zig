@@ -94,6 +94,14 @@ pub fn build(b: *std.Build) void {
     const benchmark_path = b.option([]const u8, "benchmark_path", "Path to pre-built combined archive directory") orelse "";
 
     // ---- CMake step ----
+    // A separate build directory per toolchain: reconfiguring the same
+    // CMake cache with a different CMAKE_CXX_COMPILER breaks CMake's
+    // GoogleTest dependency check (confirmed: switching -Dclang without
+    // wiping the previous build dir fails with a "Did not find Google
+    // Test sources!" error even though BENCHMARK_ENABLE_TESTING=OFF is
+    // passed again) — so GCC and Clang builds never share one, and
+    // switching back and forth doesn't require manually cleaning.
+    const build_dir_name = if (use_clang) "cmake-build-clang" else "cmake-build";
     const cmake_step = b.step("cmake", "Build combined archive via CMake");
     var lib_dir: []const u8 = undefined;
     if (benchmark_path.len > 0) {
@@ -101,7 +109,7 @@ pub fn build(b: *std.Build) void {
     } else {
         var configure_args = std.ArrayList([]const u8).init(b.allocator);
         configure_args.appendSlice(&.{
-            "cmake", "-S", ".", "-B", "cmake-build",
+            "cmake", "-S", ".", "-B", build_dir_name,
             "-DBENCHMARK_ENABLE_TESTING=OFF",
             "-DBENCHMARK_ENABLE_LTO=OFF",
             "-DBENCHMARK_ENABLE_WERROR=OFF",
@@ -117,11 +125,11 @@ pub fn build(b: *std.Build) void {
         }
         const cmake_configure = b.addSystemCommand(configure_args.items);
         const cmake_build = b.addSystemCommand(&.{
-            "cmake", "--build", "cmake-build", "--config", "Release", "--parallel",
+            "cmake", "--build", build_dir_name, "--config", "Release", "--parallel",
         });
         cmake_build.step.dependOn(&cmake_configure.step);
         cmake_step.dependOn(&cmake_build.step);
-        lib_dir = "cmake-build";
+        lib_dir = build_dir_name;
     }
 
     // ---- Zig module ----
