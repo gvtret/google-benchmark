@@ -4,45 +4,77 @@
 //   zig build              — build library (runs cmake)
 //   zig build test         — run unit tests
 //   zig build run          — run example Zig benchmarks
+//   zig build -Dclang=true <step>  — use Clang + libc++ instead of GCC + libstdc++
 
 const std = @import("std");
 
 // Zig's bundled `lld` cannot resolve system C++ libraries the way
 // `g++`/`clang++` do, so the `test` and `run` steps below link the static
-// libstdc++/libgcc archives directly as object files. Ask g++ where they
-// live instead of hardcoding a GCC version, so this works with whichever
-// GCC major version is installed. Only `test`/`run` need this — a plain
-// `zig build` must keep working on machines without g++ (e.g. macOS), so
-// failures here are logged, not fatal; `test`/`run` fail later with a clear
-// missing-file error instead.
-fn gccLibDir(b: *std.Build) []const u8 {
-    const result = std.process.Child.run(.{
-        .allocator = b.allocator,
-        .argv = &.{ "g++", "-print-file-name=libstdc++.a" },
-    }) catch {
-        std.log.warn("could not run 'g++ -print-file-name=libstdc++.a' — " ++
-            "'zig build test'/'zig build run' need g++ with static " ++
-            "libstdc++/libgcc archives installed", .{});
-        return "";
-    };
-    const path = std.mem.trimRight(u8, result.stdout, "\n");
-    return std.fs.path.dirname(path) orelse "";
+// C++ runtime archives directly as object files, located via
+// `<compiler> -print-file-name=...` instead of a hardcoded path/version.
+// Two runtimes are supported (see the `-Dclang` option below):
+//   - GNU (default): g++ + static libstdc++/libsupc++/libgcc/libgcc_eh.
+//   - LLVM (-Dclang=true): clang++ + static libc++/libc++abi/libunwind
+//     (`-stdlib=libc++`), verified to compile, link, and run correctly.
+// Only `test`/`run` need any of this — a plain `zig build` must keep
+// working on machines with neither compiler's static archives installed
+// (e.g. macOS, where the GNU archives specifically don't exist — see
+// docs/architecture.md#build-system-flow), so failures here are logged,
+// not fatal; `test`/`run` fail later with a clear missing-file error.
+const Toolchain = struct {
+    cxx: []const u8,
+    stdlib_flag: []const u8,
+    // Full resolved paths, one per archive. NOT necessarily all in the same
+    // directory: e.g. on Ubuntu's stock LLVM-20 packages, `libc++.a` and
+    // `libunwind.a` land in /lib/x86_64-linux-gnu/ while `libc++abi.a`
+    // lands in /usr/lib/llvm-20/lib/ — each must be located independently.
+    archive_paths: []const []const u8,
+};
+
+fn detectToolchain(b: *std.Build, use_clang: bool) Toolchain {
+    const cxx: []const u8 = if (use_clang) "clang++" else "g++";
+    const stdlib_flag: []const u8 = if (use_clang) "-stdlib=libc++" else "";
+    const archives: []const []const u8 = if (use_clang)
+        &.{ "libc++.a", "libc++abi.a", "libunwind.a" }
+    else
+        &.{ "libstdc++.a", "libsupc++.a", "libgcc.a", "libgcc_eh.a" };
+
+    var archive_paths = std.ArrayList([]const u8).initCapacity(b.allocator, archives.len) catch @panic("OOM");
+    for (archives) |name| {
+        var argv = std.ArrayList([]const u8).init(b.allocator);
+        argv.append(cxx) catch @panic("OOM");
+        if (stdlib_flag.len > 0) argv.append(stdlib_flag) catch @panic("OOM");
+        argv.append(b.fmt("-print-file-name={s}", .{name})) catch @panic("OOM");
+
+        const result = std.process.Child.run(.{
+            .allocator = b.allocator,
+            .argv = argv.items,
+        }) catch {
+            std.log.warn("could not run '{s} -print-file-name={s}' — " ++
+                "'zig build test'/'zig build run' need {s} with its static " ++
+                "C++ runtime installed", .{ cxx, name, cxx });
+            archive_paths.append(name) catch @panic("OOM");
+            continue;
+        };
+        const path = std.mem.trimRight(u8, result.stdout, "\n");
+        archive_paths.append(path) catch @panic("OOM");
+    }
+    return .{ .cxx = cxx, .stdlib_flag = stdlib_flag, .archive_paths = archive_paths.items };
 }
 
 // Links a Zig executable/test binary against the combined archive and the
-// static GNU C++ runtime, the same way for both the `test` and `run` steps.
+// static C++ runtime, the same way for both the `test` and `run` steps.
 fn linkCombinedArchive(
     b: *std.Build,
     compile: *std.Build.Step.Compile,
     cmake_step: *std.Build.Step,
     lib_dir: []const u8,
-    gcc_lib: []const u8,
+    toolchain: Toolchain,
 ) void {
     compile.addObjectFile(.{ .cwd_relative = b.fmt("{s}/libbenchmark_combined.a", .{lib_dir}) });
-    compile.addObjectFile(.{ .cwd_relative = b.fmt("{s}/libstdc++.a", .{gcc_lib}) });
-    compile.addObjectFile(.{ .cwd_relative = b.fmt("{s}/libsupc++.a", .{gcc_lib}) });
-    compile.addObjectFile(.{ .cwd_relative = b.fmt("{s}/libgcc.a", .{gcc_lib}) });
-    compile.addObjectFile(.{ .cwd_relative = b.fmt("{s}/libgcc_eh.a", .{gcc_lib}) });
+    for (toolchain.archive_paths) |path| {
+        compile.addObjectFile(.{ .cwd_relative = path });
+    }
     compile.linkSystemLibrary("pthread");
     compile.linkSystemLibrary("m");
     compile.step.dependOn(cmake_step);
@@ -51,7 +83,13 @@ fn linkCombinedArchive(
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
-    const gcc_lib = gccLibDir(b);
+    const use_clang = b.option(
+        bool,
+        "clang",
+        "Build libbenchmark with Clang + libc++ instead of the system default (GCC + libstdc++). Both are verified to work.",
+    ) orelse false;
+    const toolchain = detectToolchain(b, use_clang);
+    if (use_clang) std.log.info("Building with {s} + libc++", .{toolchain.cxx});
 
     const benchmark_path = b.option([]const u8, "benchmark_path", "Path to pre-built combined archive directory") orelse "";
 
@@ -61,13 +99,23 @@ pub fn build(b: *std.Build) void {
     if (benchmark_path.len > 0) {
         lib_dir = benchmark_path;
     } else {
-        const cmake_configure = b.addSystemCommand(&.{
+        var configure_args = std.ArrayList([]const u8).init(b.allocator);
+        configure_args.appendSlice(&.{
             "cmake", "-S", ".", "-B", "cmake-build",
             "-DBENCHMARK_ENABLE_TESTING=OFF",
             "-DBENCHMARK_ENABLE_LTO=OFF",
             "-DBENCHMARK_ENABLE_WERROR=OFF",
             "-DCMAKE_BUILD_TYPE=Release",
-        });
+        }) catch @panic("OOM");
+        if (use_clang) {
+            configure_args.appendSlice(&.{
+                "-DCMAKE_CXX_COMPILER=clang++",
+                b.fmt("-DCMAKE_CXX_FLAGS={s}", .{toolchain.stdlib_flag}),
+                b.fmt("-DCMAKE_EXE_LINKER_FLAGS={s}", .{toolchain.stdlib_flag}),
+                b.fmt("-DCMAKE_SHARED_LINKER_FLAGS={s}", .{toolchain.stdlib_flag}),
+            }) catch @panic("OOM");
+        }
+        const cmake_configure = b.addSystemCommand(configure_args.items);
         const cmake_build = b.addSystemCommand(&.{
             "cmake", "--build", "cmake-build", "--config", "Release", "--parallel",
         });
@@ -107,24 +155,28 @@ pub fn build(b: *std.Build) void {
         },
     });
     native_tests.root_module.addImport("benchmark", benchmark_module);
-    linkCombinedArchive(b, native_tests, cmake_step, lib_dir, gcc_lib);
+    linkCombinedArchive(b, native_tests, cmake_step, lib_dir, toolchain);
 
     const run_native_tests = b.addRunArtifact(native_tests);
 
     // C++ adapter smoke test (test_adapter.cc): a lower-level sanity check
     // of zig_api.h/cc's C ABI surface, independent of the Zig module.
-    const compile_test = b.addSystemCommand(&.{
+    var compile_test_args = std.ArrayList([]const u8).init(b.allocator);
+    compile_test_args.appendSlice(&.{
         "zig", "c++", "-std=c++17", "-fno-exceptions",
         "-I", "src", "-I", "../../include",
+    }) catch @panic("OOM");
+    if (toolchain.stdlib_flag.len > 0) compile_test_args.append(toolchain.stdlib_flag) catch @panic("OOM");
+    compile_test_args.appendSlice(&.{
         "test_adapter.cc",
         b.fmt("-L{s}", .{lib_dir}),
         "-lbenchmark_combined",
-        b.fmt("{s}/libstdc++.a", .{gcc_lib}),
-        b.fmt("{s}/libsupc++.a", .{gcc_lib}),
-        b.fmt("{s}/libgcc.a", .{gcc_lib}),
-        "-lpthread", "-lm",
-        "-o", "test_adapter",
-    });
+    }) catch @panic("OOM");
+    for (toolchain.archive_paths) |path| {
+        compile_test_args.append(path) catch @panic("OOM");
+    }
+    compile_test_args.appendSlice(&.{ "-lpthread", "-lm", "-o", "test_adapter" }) catch @panic("OOM");
+    const compile_test = b.addSystemCommand(compile_test_args.items);
     compile_test.step.dependOn(cmake_step);
 
     const run_adapter_test = b.addSystemCommand(&.{"./test_adapter"});
@@ -145,7 +197,7 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
     exe.root_module.addImport("benchmark", benchmark_module);
-    linkCombinedArchive(b, exe, cmake_step, lib_dir, gcc_lib);
+    linkCombinedArchive(b, exe, cmake_step, lib_dir, toolchain);
 
     const run_benchmarks = b.addRunArtifact(exe);
     if (b.args) |args| run_benchmarks.addArgs(args);

@@ -85,17 +85,19 @@ For user-provided strings (e.g., `registerBenchmark`, `addCustomContext`), the c
 zig build cmake  (dependency of test/run, rarely invoked directly)
   → cmake -S . -B cmake-build (builds libbenchmark + zig_api.cc as C++)
   → produces cmake-build/libbenchmark_combined.a (libbenchmark.a + zig_api.o combined)
+  → with -Dclang=true: cmake configured with -DCMAKE_CXX_COMPILER=clang++
+    and -stdlib=libc++ on CXX/EXE_LINKER/SHARED_LINKER flags
 
 zig build test
   → depends on: cmake
-  → zig c++ test_adapter.cc -lbenchmark_combined <system libstdc++.a/libsupc++.a/libgcc.a> -o test_adapter
+  → zig c++ test_adapter.cc -lbenchmark_combined <static C++ runtime archives> -o test_adapter
   → runs ./test_adapter (C++ smoke test of the zig_api.h/cc adapter surface)
 
 zig build run
   → depends on: cmake
   → zig build-exe examples/basic.zig (imports the `benchmark` Zig module)
       + cmake-build/libbenchmark_combined.a
-      + system libstdc++.a / libsupc++.a / libgcc.a / libgcc_eh.a (as object files)
+      + static C++ runtime archives (as object files)
   → runs the resulting run_benchmarks binary
 ```
 
@@ -105,18 +107,33 @@ pre-built library.
 
 Note: `zig build-exe`/`zig c++` use Zig's bundled `lld`, which cannot resolve
 system C++ libraries automatically the way `g++`/`clang++` do. Both the
-`test` and `run` steps work around this by passing `libstdc++.a`,
-`libsupc++.a`, `libgcc.a`, and (for `run`) `libgcc_eh.a` explicitly —
-`libgcc_eh.a` supplies the `_Unwind_*` symbols used by C++ exception
-tables that `libgcc.a` alone does not provide.
+`test` and `run` steps work around this by passing the static C++ runtime
+archives explicitly. Two toolchains are supported (`build.zig`'s
+`detectToolchain()`), both verified end-to-end (compile, link, run):
 
-The directory containing these archives is not hardcoded to a specific GCC
-version — `build.zig`'s `gccLibDir()` runs `g++ -print-file-name=libstdc++.a`
-and takes its `dirname()`, so whatever GCC major version is installed works.
-This lookup only runs `g++`; if it's missing, `zig build` alone still
-succeeds (with a warning) since the plain build doesn't need it — only
-`test`/`run` do. See [README.md](../README.md#prerequisites) for what to
-install and how.
+- **GCC + libstdc++ (default)**: `libstdc++.a`, `libsupc++.a`, `libgcc.a`,
+  and `libgcc_eh.a` — the last one supplies the `_Unwind_*` symbols used by
+  C++ exception tables that `libgcc.a` alone does not provide.
+- **Clang + libc++ (`-Dclang=true`)**: `libc++.a`, `libc++abi.a`,
+  `libunwind.a` — LLVM's independent equivalents, with CMake also told to
+  compile `libbenchmark`/`zig_api.cc` with `-stdlib=libc++` so the whole
+  stack is ABI-consistent. No GCC/GNU runtime is involved in this mode.
+
+Archive locations are not hardcoded to a specific compiler version —
+`detectToolchain()` runs
+`<g++|clang++> [-stdlib=libc++] -print-file-name=<name>` **separately for
+each archive**, so whatever version of either toolchain is installed
+works. This is deliberately per-archive, not a single shared directory:
+verified that Ubuntu's stock LLVM-20 packages put `libc++abi.a` under
+`/usr/lib/llvm-20/lib/` while `libc++.a`/`libunwind.a` land in the generic
+`/lib/x86_64-linux-gnu/` — assuming one directory for all of them (an
+earlier version of this code did) breaks silently with a "file not found"
+link error on exactly this kind of layout. This lookup only runs the chosen
+compiler; if it's missing (or its static archives aren't installed),
+`zig build` alone still succeeds (with a warning) since the plain build
+doesn't need it — only `test`/`run` do. See
+[README.md](../README.md#prerequisites) for what to install and how, for
+both toolchains.
 
 ## Thread Safety
 

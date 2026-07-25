@@ -75,7 +75,12 @@ This runs two independent checks:
 Both link against the combined archive the same way `zig build run` does
 (see [architecture.md](architecture.md#build-system-flow)) — a workaround
 for Zig's `lld` not resolving system C++ libraries the way `g++`/`clang++`
-do.
+do. Pass `-Dclang=true` to use Clang + libc++ instead of the default GCC +
+libstdc++ — both are verified to compile, link, and run correctly:
+
+```bash
+zig build test -Dclang=true
+```
 
 The native test binary is built with a non-default test runner mode
 (`.mode = .simple` instead of the build system's default `.server`), because
@@ -114,7 +119,8 @@ zig build run
 
 This links `examples/basic.zig` against the combined `libbenchmark_combined.a`
 produced by the `cmake` step, plus the system's static C++ runtime
-(`libstdc++.a`, `libsupc++.a`, `libgcc.a`, `libgcc_eh.a` on Linux) — see
+(`libstdc++.a`, `libsupc++.a`, `libgcc.a`, `libgcc_eh.a` on Linux — or, with
+`-Dclang=true`, `libc++.a`, `libc++abi.a`, `libunwind.a`) — see
 [architecture.md](architecture.md#build-system-flow) for why these are
 needed and passed explicitly.
 
@@ -166,6 +172,15 @@ per OS:
   the macOS `test_adapter.cc` step's own `-lstdc++` may have the same
   underlying risk (modern macOS SDKs dropped `libstdc++`) — also unverified,
   left as-is rather than guessed at.
+  - `build.zig` now also supports `-Dclang=true` (Clang + static libc++,
+    see "Running Tests" above and
+    [architecture.md](architecture.md#build-system-flow)) — verified on
+    Linux, where it's a genuinely independent toolchain from GCC. This does
+    **not** close the macOS gap above: Apple ships Clang by default, but
+    typically only a *dynamic* `libc++.dylib`, not the static `libc++.a`
+    this build system links as an object file. `zig build test
+    -Dclang=true` would still need a static `libc++.a` from somewhere (e.g.
+    Homebrew's LLVM) to work on macOS — unverified, not attempted here.
 
 ## Code Style
 

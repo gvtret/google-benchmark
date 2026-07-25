@@ -84,6 +84,19 @@ jobs:
         if: runner.os == 'Linux'
         run: zig build test
         working-directory: bindings/zig
+      # Linux, Clang + libc++: exercises the -Dclang=true toolchain added
+      # to build.zig (see docs/architecture.md#build-system-flow). Only on
+      # Linux — untested on macOS, see the macOS block below.
+      # Note: don't add libunwind-dev explicitly — libc++-dev already pulls
+      # in the matching LLVM libunwind as a transitive dependency, and it
+      # conflicts with GNU's libunwind-dev package if both are requested.
+      - name: Install Clang + libc++ (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y clang libc++-dev libc++abi-dev
+      - name: Run zig build test -Dclang=true (Linux)
+        if: runner.os == 'Linux'
+        run: zig build test -Dclang=true
+        working-directory: bindings/zig
       # macOS: kept as separate manual steps rather than `zig build test`.
       # build.zig's test/run steps link static libstdc++/libgcc archives
       # located via `g++ -print-file-name=...`, which is GNU-specific —
