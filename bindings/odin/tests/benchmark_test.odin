@@ -89,6 +89,10 @@ all_benchmarks_run :: proc(t: ^testing.T) {
     bm_threads := gb.register("BM_Threads", bm_empty);
     _ = gb.threads_benchmark(bm_threads, 4);
 
+    bm_multi_arg := gb.register("BM_MultiArg", bm_empty);
+    bm_multi_arg = gb.args(bm_multi_arg, {64, 64});
+    _ = gb.args(bm_multi_arg, {128, 128});
+
     bm_named := gb.register("BM_Named", bm_empty);
     name := gb.get_name(bm_named);
     if name == nil || name != "BM_Named" {

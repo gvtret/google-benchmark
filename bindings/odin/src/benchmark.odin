@@ -142,6 +142,19 @@ arg :: proc(self: Benchmark, x: int) -> Benchmark {
     return self;
 }
 
+// Add one multi-argument value combination, e.g. args(bm, {64, 64}) for a
+// benchmark taking two range() parameters. Call multiple times to register
+// several combinations (each call adds one, it does not replace).
+args :: proc(self: Benchmark, values: []int) -> Benchmark {
+    buf := make([]c.int64_t, len(values));
+    defer delete(buf);
+    for v, i in values {
+        buf[i] = c.int64_t(v);
+    }
+    benchmark_odin_benchmark_args(self.ptr, raw_data(buf), c.size_t(len(buf)));
+    return self;
+}
+
 range_benchmark :: proc(self: Benchmark, start, limit: int) -> Benchmark {
     benchmark_odin_benchmark_range(self.ptr, c.int64_t(start), c.int64_t(limit));
     return self;

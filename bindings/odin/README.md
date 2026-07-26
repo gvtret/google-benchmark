@@ -2,11 +2,19 @@
 
 Odin bindings for the [Google Benchmark](https://github.com/google/benchmark) microbenchmark library.
 
+See also: [User Guide](docs/user_guide.md) (patterns and CLI flags),
+[Developer Guide](docs/developer_guide.md) (project layout, adding bindings,
+tests), [Architecture](docs/architecture.md) (how the FFI boundary works).
+`examples/basic.odin` has nine complete, runnable examples covering every
+pattern below.
+
 ## Prerequisites
 
-- Odin compiler (latest stable)
+- Odin compiler, **nightly** build (the bindings use `"c"` calling-convention
+  foreign proc syntax not accepted by the latest stable release as of this
+  writing)
 - CMake 3.13+
-- C++17 compatible compiler (GCC, Clang, or MSVC)
+- C++17 compatible compiler (GCC or Clang)
 
 ## Quick Start
 
@@ -87,7 +95,7 @@ Odin has no method-call sugar for free procedures, so all functions below are ca
 ### Functions
 
 | Function | Description |
-|---|---|
+| --- | --- |
 | `initialize(argc, argv)` | Initialize the benchmark library |
 | `run()` | Run all registered benchmarks, returns count |
 | `register(name, func)` | Register a benchmark function |
@@ -97,7 +105,7 @@ Odin has no method-call sugar for free procedures, so all functions below are ca
 ### State Functions
 
 | Function | Description |
-|---|---|
+| --- | --- |
 | `keep_running(state)` | Returns true if benchmark should continue |
 | `keep_running_batch(state, n)` | Process n iterations at once |
 | `pause_timing(state)` | Pause the timer |
@@ -117,8 +125,9 @@ Odin has no method-call sugar for free procedures, so all functions below are ca
 All functions take `Benchmark` as the first argument and return `Benchmark`.
 
 | Function | Description |
-|---|---|
+| --- | --- |
 | `arg(bm, x)` | Add a single argument |
+| `args(bm, values)` | Add one multi-argument combination, e.g. `args(bm, {64, 64})` |
 | `range_benchmark(bm, start, limit)` | Add range (doubles each step) |
 | `dense_range(bm, start, limit, step)` | Add dense range |
 | `unit(bm, time_unit)` | Set time unit |
