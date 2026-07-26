@@ -5,6 +5,7 @@
 
 # CMake build artifacts
 cmake-build/
+cmake-build-*/
 
 # IDE / editor
 .vscode/

@@ -4,6 +4,12 @@ project(google_benchmark_odin CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# libbenchmark's own tests require a vendored/downloaded GoogleTest, which
+# this build does not provide. Disable them so the plain documented
+# `cmake -S . -B cmake-build` command works from a clean checkout.
+set(BENCHMARK_ENABLE_TESTING OFF CACHE BOOL "" FORCE)
+set(BENCHMARK_ENABLE_WERROR OFF CACHE BOOL "" FORCE)
+
 # Build libbenchmark from source
 add_subdirectory(../../ benchmark_build EXCLUDE_FROM_ALL)
 
