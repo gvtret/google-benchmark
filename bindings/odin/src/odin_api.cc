@@ -22,13 +22,15 @@ extern "C" void benchmark_odin_clear_registered_benchmarks(void) {
   ::benchmark::ClearRegisteredBenchmarks();
 }
 
-extern "C" void benchmark_odin_add_custom_context(const char* key, const char* value) {
+extern "C" void benchmark_odin_add_custom_context(const char* key,
+                                                  const char* value) {
   ::benchmark::AddCustomContext(key, value);
 }
 
 // ---- Benchmark registration ----
 
-extern "C" void* benchmark_odin_register_benchmark(const char* name, benchmark_odin_fn fn) {
+extern "C" void* benchmark_odin_register_benchmark(const char* name,
+                                                   benchmark_odin_fn fn) {
   return ::benchmark::RegisterBenchmark(
       name, [fn](benchmark::State& st) { fn(&st); });
 }
@@ -39,15 +41,18 @@ extern "C" void benchmark_odin_benchmark_arg(void* b, int64_t x) {
   static_cast<benchmark::Benchmark*>(b)->Arg(x);
 }
 
-extern "C" void benchmark_odin_benchmark_range(void* b, int64_t start, int64_t limit) {
+extern "C" void benchmark_odin_benchmark_range(void* b, int64_t start,
+                                               int64_t limit) {
   static_cast<benchmark::Benchmark*>(b)->Range(start, limit);
 }
 
-extern "C" void benchmark_odin_benchmark_dense_range(void* b, int64_t start, int64_t limit, int step) {
+extern "C" void benchmark_odin_benchmark_dense_range(void* b, int64_t start,
+                                                     int64_t limit, int step) {
   static_cast<benchmark::Benchmark*>(b)->DenseRange(start, limit, step);
 }
 
-extern "C" void benchmark_odin_benchmark_args(void* b, const int64_t* args, size_t len) {
+extern "C" void benchmark_odin_benchmark_args(void* b, const int64_t* args,
+                                              size_t len) {
   std::vector<int64_t> v(args, args + len);
   static_cast<benchmark::Benchmark*>(b)->Args(v);
 }
@@ -61,7 +66,8 @@ extern "C" void benchmark_odin_benchmark_threads(void* b, int t) {
   static_cast<benchmark::Benchmark*>(b)->Threads(t);
 }
 
-extern "C" void benchmark_odin_benchmark_thread_range(void* b, int min_threads, int max_threads) {
+extern "C" void benchmark_odin_benchmark_thread_range(void* b, int min_threads,
+                                                      int max_threads) {
   static_cast<benchmark::Benchmark*>(b)->ThreadRange(min_threads, max_threads);
 }
 
@@ -116,11 +122,13 @@ extern "C" void benchmark_odin_state_skip_with_error(void* s, const char* msg) {
   static_cast<benchmark::State*>(s)->SkipWithError(msg);
 }
 
-extern "C" void benchmark_odin_state_set_bytes_processed(void* s, int64_t bytes) {
+extern "C" void benchmark_odin_state_set_bytes_processed(void* s,
+                                                         int64_t bytes) {
   static_cast<benchmark::State*>(s)->SetBytesProcessed(bytes);
 }
 
-extern "C" void benchmark_odin_state_set_items_processed(void* s, int64_t items) {
+extern "C" void benchmark_odin_state_set_items_processed(void* s,
+                                                         int64_t items) {
   static_cast<benchmark::State*>(s)->SetItemsProcessed(items);
 }
 

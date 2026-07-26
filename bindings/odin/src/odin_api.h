@@ -39,24 +39,29 @@ void benchmark_odin_add_custom_context(const char* key, const char* value);
 typedef void (*benchmark_odin_fn)(void* state);
 
 // Register a benchmark with the given name and callback.
-// Returns an opaque Benchmark* pointer for configuration (arg, range, threads, etc.).
+// Returns an opaque Benchmark* pointer for configuration (arg, range, threads,
+// etc.).
 void* benchmark_odin_register_benchmark(const char* name, benchmark_odin_fn fn);
 
 // ---- Benchmark configuration ----
 // All methods take an opaque Benchmark* and return void.
-// Odin wraps them as: method :: (self: Benchmark, ...) Benchmark { c_api(...); return self; }
+// Odin wraps them as: method :: (self: Benchmark, ...) Benchmark { c_api(...);
+// return self; }
 
 // Add a single argument value to the benchmark.
 void benchmark_odin_benchmark_arg(void* benchmark, int64_t x);
 
 // Add a range of arguments from start to limit (doubles each step).
-void benchmark_odin_benchmark_range(void* benchmark, int64_t start, int64_t limit);
+void benchmark_odin_benchmark_range(void* benchmark, int64_t start,
+                                    int64_t limit);
 
 // Add a dense range of arguments from start to limit with given step.
-void benchmark_odin_benchmark_dense_range(void* benchmark, int64_t start, int64_t limit, int step);
+void benchmark_odin_benchmark_dense_range(void* benchmark, int64_t start,
+                                          int64_t limit, int step);
 
 // Add explicit argument values from an array.
-void benchmark_odin_benchmark_args(void* benchmark, const int64_t* args, size_t len);
+void benchmark_odin_benchmark_args(void* benchmark, const int64_t* args,
+                                   size_t len);
 
 // Set the time unit for display (0=ns, 1=us, 2=ms, 3=s).
 void benchmark_odin_benchmark_unit(void* benchmark, int unit);
@@ -65,7 +70,8 @@ void benchmark_odin_benchmark_unit(void* benchmark, int unit);
 void benchmark_odin_benchmark_threads(void* benchmark, int t);
 
 // Run with thread count from min_threads to max_threads.
-void benchmark_odin_benchmark_thread_range(void* benchmark, int min_threads, int max_threads);
+void benchmark_odin_benchmark_thread_range(void* benchmark, int min_threads,
+                                           int max_threads);
 
 // Set minimum run time in seconds.
 void benchmark_odin_benchmark_min_time(void* benchmark, double t);
@@ -95,7 +101,8 @@ const char* benchmark_odin_benchmark_name(void* benchmark);
 // Returns true if the benchmark should continue running (call in a while loop).
 bool benchmark_odin_state_keep_running(void* state);
 
-// Run n iterations in a batch (more efficient than calling keep_running n times).
+// Run n iterations in a batch (more efficient than calling keep_running n
+// times).
 bool benchmark_odin_state_keep_running_batch(void* state, int64_t n);
 
 // Pause the benchmark timer (for expensive setup not to be timed).
