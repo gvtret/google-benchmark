@@ -15,7 +15,46 @@ import "core:c"
 
 // ---- Foreign imports from C adapter ----
 
-foreign import "odin_api"
+foreign import odin_api "../cmake-build/libodin_api.a"
+
+@(default_calling_convention = "c")
+foreign odin_api {
+    benchmark_odin_initialize                    :: proc(argc: ^c.int, argv: ^^u8) ---
+    benchmark_odin_run                           :: proc() -> c.size_t ---
+    benchmark_odin_clear_registered_benchmarks   :: proc() ---
+    benchmark_odin_add_custom_context            :: proc(key, value: cstring) ---
+
+    benchmark_odin_register_benchmark            :: proc(name: cstring, fn: proc "c" (rawptr)) -> rawptr ---
+
+    benchmark_odin_benchmark_arg                 :: proc(benchmark: rawptr, x: c.int64_t) ---
+    benchmark_odin_benchmark_range                :: proc(benchmark: rawptr, start, limit: c.int64_t) ---
+    benchmark_odin_benchmark_dense_range          :: proc(benchmark: rawptr, start, limit: c.int64_t, step: c.int) ---
+    benchmark_odin_benchmark_args                 :: proc(benchmark: rawptr, args: [^]c.int64_t, len: c.size_t) ---
+    benchmark_odin_benchmark_unit                 :: proc(benchmark: rawptr, unit: c.int) ---
+    benchmark_odin_benchmark_threads              :: proc(benchmark: rawptr, t: c.int) ---
+    benchmark_odin_benchmark_thread_range         :: proc(benchmark: rawptr, min_threads, max_threads: c.int) ---
+    benchmark_odin_benchmark_min_time             :: proc(benchmark: rawptr, t: c.double) ---
+    benchmark_odin_benchmark_iterations           :: proc(benchmark: rawptr, n: c.int64_t) ---
+    benchmark_odin_benchmark_repetitions          :: proc(benchmark: rawptr, n: c.int) ---
+    benchmark_odin_benchmark_use_real_time        :: proc(benchmark: rawptr) ---
+    benchmark_odin_benchmark_use_manual_time      :: proc(benchmark: rawptr) ---
+    benchmark_odin_benchmark_complexity           :: proc(benchmark: rawptr, complexity: c.int) ---
+    benchmark_odin_benchmark_name                 :: proc(benchmark: rawptr) -> cstring ---
+
+    benchmark_odin_state_keep_running             :: proc(state: rawptr) -> c.bool ---
+    benchmark_odin_state_keep_running_batch       :: proc(state: rawptr, n: c.int64_t) -> c.bool ---
+    benchmark_odin_state_pause_timing             :: proc(state: rawptr) ---
+    benchmark_odin_state_resume_timing            :: proc(state: rawptr) ---
+    benchmark_odin_state_skip_with_error          :: proc(state: rawptr, msg: cstring) ---
+    benchmark_odin_state_set_bytes_processed      :: proc(state: rawptr, bytes: c.int64_t) ---
+    benchmark_odin_state_set_items_processed      :: proc(state: rawptr, items: c.int64_t) ---
+    benchmark_odin_state_set_label                :: proc(state: rawptr, label: cstring) ---
+    benchmark_odin_state_set_complexity_n         :: proc(state: rawptr, n: c.int64_t) ---
+    benchmark_odin_state_range                    :: proc(state: rawptr, pos: c.size_t) -> c.int64_t ---
+    benchmark_odin_state_iterations               :: proc(state: rawptr) -> c.int64_t ---
+    benchmark_odin_state_threads                  :: proc(state: rawptr) -> c.int ---
+    benchmark_odin_state_thread_index             :: proc(state: rawptr) -> c.int ---
+}
 
 // ---- Types ----
 
@@ -45,148 +84,145 @@ Benchmark :: struct {
 // ---- State methods (file-scope procs taking State as first param) ----
 
 keep_running :: proc(self: State) -> bool {
-    return c.benchmark_odin_state_keep_running(self.ptr);
+    return bool(benchmark_odin_state_keep_running(self.ptr));
 }
 
 keep_running_batch :: proc(self: State, n: int) -> bool {
-    return c.benchmark_odin_state_keep_running_batch(self.ptr, n);
+    return bool(benchmark_odin_state_keep_running_batch(self.ptr, c.int64_t(n)));
 }
 
 pause_timing :: proc(self: State) {
-    c.benchmark_odin_state_pause_timing(self.ptr);
+    benchmark_odin_state_pause_timing(self.ptr);
 }
 
 resume_timing :: proc(self: State) {
-    c.benchmark_odin_state_resume_timing(self.ptr);
+    benchmark_odin_state_resume_timing(self.ptr);
 }
 
 skip_with_error :: proc(self: State, msg: cstring) {
-    c.benchmark_odin_state_skip_with_error(self.ptr, msg);
+    benchmark_odin_state_skip_with_error(self.ptr, msg);
 }
 
 set_bytes_processed :: proc(self: State, bytes: int) {
-    c.benchmark_odin_state_set_bytes_processed(self.ptr, bytes);
+    benchmark_odin_state_set_bytes_processed(self.ptr, c.int64_t(bytes));
 }
 
 set_items_processed :: proc(self: State, items: int) {
-    c.benchmark_odin_state_set_items_processed(self.ptr, items);
+    benchmark_odin_state_set_items_processed(self.ptr, c.int64_t(items));
 }
 
 set_label :: proc(self: State, label: cstring) {
-    c.benchmark_odin_state_set_label(self.ptr, label);
+    benchmark_odin_state_set_label(self.ptr, label);
 }
 
 set_complexity_n :: proc(self: State, n: int) {
-    c.benchmark_odin_state_set_complexity_n(self.ptr, n);
+    benchmark_odin_state_set_complexity_n(self.ptr, c.int64_t(n));
 }
 
 range :: proc(self: State, pos: int) -> int {
-    return c.benchmark_odin_state_range(self.ptr, pos);
+    return int(benchmark_odin_state_range(self.ptr, c.size_t(pos)));
 }
 
 iterations :: proc(self: State) -> int {
-    return c.benchmark_odin_state_iterations(self.ptr);
+    return int(benchmark_odin_state_iterations(self.ptr));
 }
 
 threads :: proc(self: State) -> int {
-    return c.benchmark_odin_state_threads(self.ptr);
+    return int(benchmark_odin_state_threads(self.ptr));
 }
 
 thread_index :: proc(self: State) -> int {
-    return c.benchmark_odin_state_thread_index(self.ptr);
+    return int(benchmark_odin_state_thread_index(self.ptr));
 }
 
 // ---- Benchmark methods (file-scope procs taking Benchmark as first param) ----
 
 arg :: proc(self: Benchmark, x: int) -> Benchmark {
-    c.benchmark_odin_benchmark_arg(self.ptr, x);
+    benchmark_odin_benchmark_arg(self.ptr, c.int64_t(x));
     return self;
 }
 
 range_benchmark :: proc(self: Benchmark, start, limit: int) -> Benchmark {
-    c.benchmark_odin_benchmark_range(self.ptr, start, limit);
+    benchmark_odin_benchmark_range(self.ptr, c.int64_t(start), c.int64_t(limit));
     return self;
 }
 
 dense_range :: proc(self: Benchmark, start, limit: int, step: int) -> Benchmark {
-    c.benchmark_odin_benchmark_dense_range(self.ptr, start, limit, step);
+    benchmark_odin_benchmark_dense_range(self.ptr, c.int64_t(start), c.int64_t(limit), c.int(step));
     return self;
 }
 
 unit :: proc(self: Benchmark, u: TimeUnit) -> Benchmark {
-    c.benchmark_odin_benchmark_unit(self.ptr, int(u));
+    benchmark_odin_benchmark_unit(self.ptr, c.int(u));
     return self;
 }
 
 threads_benchmark :: proc(self: Benchmark, t: int) -> Benchmark {
-    c.benchmark_odin_benchmark_threads(self.ptr, t);
+    benchmark_odin_benchmark_threads(self.ptr, c.int(t));
     return self;
 }
 
 thread_range :: proc(self: Benchmark, min_t, max_t: int) -> Benchmark {
-    c.benchmark_odin_benchmark_thread_range(self.ptr, min_t, max_t);
+    benchmark_odin_benchmark_thread_range(self.ptr, c.int(min_t), c.int(max_t));
     return self;
 }
 
 min_time :: proc(self: Benchmark, t: f64) -> Benchmark {
-    c.benchmark_odin_benchmark_min_time(self.ptr, t);
+    benchmark_odin_benchmark_min_time(self.ptr, c.double(t));
     return self;
 }
 
 iterations_benchmark :: proc(self: Benchmark, n: int) -> Benchmark {
-    c.benchmark_odin_benchmark_iterations(self.ptr, n);
+    benchmark_odin_benchmark_iterations(self.ptr, c.int64_t(n));
     return self;
 }
 
 repetitions :: proc(self: Benchmark, n: int) -> Benchmark {
-    c.benchmark_odin_benchmark_repetitions(self.ptr, n);
+    benchmark_odin_benchmark_repetitions(self.ptr, c.int(n));
     return self;
 }
 
 use_real_time :: proc(self: Benchmark) -> Benchmark {
-    c.benchmark_odin_benchmark_use_real_time(self.ptr);
+    benchmark_odin_benchmark_use_real_time(self.ptr);
     return self;
 }
 
 use_manual_time :: proc(self: Benchmark) -> Benchmark {
-    c.benchmark_odin_benchmark_use_manual_time(self.ptr);
+    benchmark_odin_benchmark_use_manual_time(self.ptr);
     return self;
 }
 
 complexity :: proc(self: Benchmark, b: BigO) -> Benchmark {
-    c.benchmark_odin_benchmark_complexity(self.ptr, int(b));
+    benchmark_odin_benchmark_complexity(self.ptr, c.int(b));
     return self;
 }
 
 get_name :: proc(self: Benchmark) -> cstring {
-    return c.benchmark_odin_benchmark_name(self.ptr);
+    return benchmark_odin_benchmark_name(self.ptr);
 }
 
 // ---- Public functions ----
 
 initialize :: proc(argc_: ^c.int, argv_: ^^u8) {
-    c.benchmark_odin_initialize(argc_, argv_);
+    benchmark_odin_initialize(argc_, argv_);
 }
 
 run :: proc() -> int {
-    return int(c.benchmark_odin_run());
+    return int(benchmark_odin_run());
 }
 
-register :: proc(name: cstring, func: proc(State)) -> Benchmark {
-    trampoline :: proc(state_ptr: rawptr) -> void {
-        if state_ptr == nil { return; }
-        s := State{ .ptr = state_ptr };
-        func(s);
-    }
-
-    result := c.benchmark_odin_register_benchmark(name, trampoline);
-    return Benchmark{ .ptr = result };
+// func must use the "c" calling convention: proc "c" (state: State).
+// State wraps a single rawptr and is ABI-compatible with a bare pointer,
+// so it is passed straight through to the C adapter without a trampoline.
+register :: proc(name: cstring, func: proc "c" (State)) -> Benchmark {
+    result := benchmark_odin_register_benchmark(name, transmute(proc "c" (rawptr))func);
+    return Benchmark{ptr = result};
 }
 
 add_custom_context :: proc(key, value: cstring) {
-    c.benchmark_odin_add_custom_context(key, value);
+    benchmark_odin_add_custom_context(key, value);
 }
 
 clear_registered_benchmarks :: proc() {
-    c.benchmark_odin_clear_registered_benchmarks();
+    benchmark_odin_clear_registered_benchmarks();
 }

@@ -13,25 +13,34 @@ Odin bindings for the [Google Benchmark](https://github.com/google/benchmark) mi
 ```odin
 package main
 
+import "base:runtime"
+import "core:c"
 import benchmark "bindings/odin/src"
-import "core:os"
 
-BM_hello :: proc(state: *benchmark.State) void {
-    for state.keep_running() {
+BM_hello :: proc "c" (state: benchmark.State) {
+    context = runtime.default_context()
+    for benchmark.keep_running(state) {
         // your code to benchmark
     }
 }
 
 main :: proc() {
-    benchmark.initialize(os.args_v[0..])
-    benchmark.register("BM_hello", BM_hello, {})
+    args := [1]cstring{"benchmark"}
+    argc := c.int(len(args))
+    benchmark.initialize(&argc, cast(^^u8)&args[0])
+    _ = benchmark.register("BM_hello", BM_hello)
     _ = benchmark.run()
 }
 ```
 
+Benchmark functions must use the `"c"` calling convention (`proc "c" (state: benchmark.State)`)
+since they are called directly from the C++ adapter with no Odin context — set
+`context = runtime.default_context()` as the first line of the callback if it calls into
+anything that needs a context (allocators, etc.).
+
 ## Building
 
-### Build libbenchmark via CMake
+### Build libbenchmark and the C adapter via CMake
 
 ```bash
 cd bindings/odin
@@ -39,67 +48,86 @@ cmake -S . -B cmake-build -DCMAKE_BUILD_TYPE=Release
 cmake --build cmake-build --parallel
 ```
 
-### Build and run tests
+This produces `cmake-build/libodin_api.a` (google-benchmark + the C adapter combined),
+which `src/benchmark.odin` links against via `foreign import`.
+
+### Run the example
 
 ```bash
 cd bindings/odin
-odin build src -out:benchmark_test
-./benchmark_test
+odin build examples -out:basic_example -extra-linker-flags:"-lstdc++ -lpthread"
+./basic_example
 ```
+
+### Run tests
+
+```bash
+cd bindings/odin
+odin test tests -extra-linker-flags:"-lstdc++ -lpthread"
+```
+
+Note: all `gb.run()` assertions live in a single `@(test)` proc. Upstream
+google-benchmark's `RunSpecifiedBenchmarks()` corrupts global state if called more than
+once per process (reproducible in plain C++, independent of these bindings), so tests
+register every benchmark configuration and call `run()` exactly once.
 
 ## API
 
 ### Types
 
 - `State` — Passed to benchmark callbacks, controls iteration and metrics
-- `Benchmark` — Configuration handle (fluent API, methods return self)
+- `Benchmark` — Configuration handle (passed explicitly as the first argument to the
+  functions below, all of which return `Benchmark` so calls can be chained via `bm = gb.foo(bm, ...)`)
 - `TimeUnit` — Time display unit (nanosecond, microsecond, millisecond, second)
 - `BigO` — Complexity mode (auto, O(n), O(n log n), O(1), O(n²))
+
+Odin has no method-call sugar for free procedures, so all functions below are called as
+`gb.function_name(value, ...)`, not `value.function_name(...)`.
 
 ### Functions
 
 | Function | Description |
 |---|---|
-| `initialize(args)` | Initialize the benchmark library |
+| `initialize(argc, argv)` | Initialize the benchmark library |
 | `run()` | Run all registered benchmarks, returns count |
 | `register(name, func)` | Register a benchmark function |
 | `add_custom_context(key, value)` | Add custom context to output |
 | `clear_registered_benchmarks()` | Remove all registered benchmarks |
 
-### State Methods
+### State Functions
 
-| Method | Description |
+| Function | Description |
 |---|---|
-| `keep_running()` | Returns true if benchmark should continue |
-| `keep_running_batch(n)` | Process n iterations at once |
-| `pause_timing()` | Pause the timer |
-| `resume_timing()` | Resume the timer |
-| `skip_with_error(msg)` | Skip with error message |
-| `set_bytes_processed(n)` | Report bytes per iteration |
-| `set_items_processed(n)` | Report items per iteration |
-| `set_label(str)` | Set a label |
-| `set_complexity_n(n)` | Set complexity parameter N |
-| `range(pos)` | Get range argument at position |
-| `iterations()` | Get iteration count |
-| `threads()` | Get thread count |
-| `thread_index()` | Get current thread index |
+| `keep_running(state)` | Returns true if benchmark should continue |
+| `keep_running_batch(state, n)` | Process n iterations at once |
+| `pause_timing(state)` | Pause the timer |
+| `resume_timing(state)` | Resume the timer |
+| `skip_with_error(state, msg)` | Skip with error message |
+| `set_bytes_processed(state, n)` | Report bytes per iteration |
+| `set_items_processed(state, n)` | Report items per iteration |
+| `set_label(state, str)` | Set a label |
+| `set_complexity_n(state, n)` | Set complexity parameter N |
+| `range(state, pos)` | Get range argument at position |
+| `iterations(state)` | Get iteration count |
+| `threads(state)` | Get thread count |
+| `thread_index(state)` | Get current thread index |
 
-### Benchmark Configuration (fluent API)
+### Benchmark Configuration
 
-All methods return `Benchmark` for chaining.
+All functions take `Benchmark` as the first argument and return `Benchmark`.
 
-| Method | Description |
+| Function | Description |
 |---|---|
-| `arg(x)` | Add a single argument |
-| `range(start, limit)` | Add range (doubles each step) |
-| `dense_range(start, limit, step)` | Add dense range |
-| `unit(time_unit)` | Set time unit |
-| `threads(n)` | Set thread count |
-| `thread_range(min, max)` | Run with thread range |
-| `min_time(t)` | Set minimum run time |
-| `iterations(n)` | Set iteration count |
-| `repetitions(n)` | Set repetition count |
-| `use_real_time()` | Use wall-clock time |
-| `use_manual_time()` | Use manual time control |
-| `complexity(bigo)` | Set complexity mode |
-| `get_name()` | Get benchmark name |
+| `arg(bm, x)` | Add a single argument |
+| `range_benchmark(bm, start, limit)` | Add range (doubles each step) |
+| `dense_range(bm, start, limit, step)` | Add dense range |
+| `unit(bm, time_unit)` | Set time unit |
+| `threads_benchmark(bm, n)` | Set thread count |
+| `thread_range(bm, min, max)` | Run with thread range |
+| `min_time(bm, t)` | Set minimum run time |
+| `iterations_benchmark(bm, n)` | Set iteration count |
+| `repetitions(bm, n)` | Set repetition count |
+| `use_real_time(bm)` | Use wall-clock time |
+| `use_manual_time(bm)` | Use manual time control |
+| `complexity(bm, bigo)` | Set complexity mode |
+| `get_name(bm)` | Get benchmark name |
