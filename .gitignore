@@ -70,3 +70,6 @@ uv.lock
 
 # Rust build stuff
 /bindings/rust/target/
+
+# Odin build stuff
+/bindings/odin/cmake-build/

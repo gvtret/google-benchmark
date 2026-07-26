@@ -1,0 +1,20 @@
+# Odin build artifacts
+*.exe
+*.o
+*.obj
+
+# CMake build artifacts
+cmake-build/
+cmake-build-*/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+.mimocode/

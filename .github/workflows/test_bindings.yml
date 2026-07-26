@@ -61,3 +61,32 @@ jobs:
           cmake -S . -B build -DBENCHMARK_ENABLE_RUST_BINDINGS=ON -DBENCHMARK_DOWNLOAD_DEPENDENCIES=ON
           cmake --build build
           cd build && ctest -R rust_bindings_tests
+
+  odin_bindings:
+    name: Test Odin bindings on ubuntu-latest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # Nightly is required: the bindings use "c" calling-convention foreign
+      # proc syntax that isn't accepted by the latest stable release.
+      - name: Install Odin (nightly)
+        uses: laytan/setup-odin@v2
+        with:
+          release: nightly
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build libbenchmark + C adapter via CMake
+        run: |
+          cmake -S . -B cmake-build -DCMAKE_BUILD_TYPE=Release
+          cmake --build cmake-build --parallel
+        working-directory: bindings/odin
+      - name: Run odin test tests
+        run: odin test tests -extra-linker-flags:"-lstdc++ -lpthread"
+        working-directory: bindings/odin
+      - name: Build and run examples
+        run: |
+          odin build examples -out:basic_example -extra-linker-flags:"-lstdc++ -lpthread"
+          ./basic_example --benchmark_min_time=0.01s
+        working-directory: bindings/odin
