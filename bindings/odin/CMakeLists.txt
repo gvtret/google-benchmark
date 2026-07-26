@@ -17,7 +17,7 @@ target_compile_options(odin_api PRIVATE -fno-exceptions)
 target_link_libraries(odin_api PUBLIC benchmark)
 
 # Create a combined archive
-set(COMBINED_LIB ${CMAKE_CURRENT_BINARY_DIR}/libbenchmark_combined.a)
+set(COMBINED_LIB ${CMAKE_CURRENT_BINARY_DIR}/libodin_api.a)
 set(TMP_DIR ${CMAKE_CURRENT_BINARY_DIR}/ar_tmp)
 
 add_custom_target(combine_libs ALL
